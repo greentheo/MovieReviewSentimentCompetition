@@ -7,8 +7,11 @@ runtime: shiny
 ---
 
 ### More info on Theo:  [Royalty Analytics](http://royaltyanalytics.com)
+
 ### LinkedIn Link: [Theodore Van Rooy](https://www.linkedin.com/in/theodorev)  
+
 --------------
+
 
 A full description of the competition can be found [here](https://www.kaggle.com/c/sentiment-analysis-on-movie-reviews) on the Kaggle website.  The following is my summary and take on solving this problem.  
 
@@ -122,17 +125,25 @@ There is a large body of work surrounding sentiment analysis and no one direct m
 
 Let's apply a simple learning model to a standard cross validation scheme.  Please adjust sliders below to see results:
 
-**Inputs:**  word-sentiment association
-**Feature Selection:** A word is not used if it's sentiment is too varied, otherwise it's average sentiment. 
-**Classification:**  a phrase is scored by the average sentiment of it's words, and piped through a random forest to predict class based on average sentiment.
-**Optimization:**  vary the threshold used to select whether words are used in the average sentiment score for a phrase.
+1.  **Inputs:**  word-sentiment association
+2.  **Feature Selection:** A word is not used if it's sentiment is too varied, otherwise it's average sentiment. 
+3.  **Classification:**  a phrase is scored by the average sentiment of it's words, and piped through a random forest to predict class based on average sentiment.
+4.  **Optimization:**  vary the threshold used to select whether words are used in the average sentiment score for a phrase.
 
 ### Mean word sentiment
 
 Just for fun, this is what happens if you try to classify a word according to a sentiment.  This chart shows that many words have a clear sentiment... so they should be useul in our simple feature selection/creation.
 
-```{r echo=FALSE}
 
+```{r echo=FALSE, results='asis'}
+library(knitr)
+
+kable(x = head(wordTable, n=10), format = "markdown", digits = 3)
+
+```
+
+
+```{r echo=FALSE}
 ggplot(wordTable, aes(x=meanSent))+geom_histogram()+
   labs(title="Distribution of Sentiment Across words in phrases",x="Mean Sentiment")
 
