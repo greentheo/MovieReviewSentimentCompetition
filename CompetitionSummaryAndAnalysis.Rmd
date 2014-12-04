@@ -12,7 +12,7 @@ runtime: shiny
 
 A full description of the competition can be found [here](https://www.kaggle.com/c/sentiment-analysis-on-movie-reviews) on the Kaggle website.  The following is my summary and take on solving this problem.  
 
-Additionally, this document is interactive and the code to produce it can be found on my github repository [here](https://www.kaggle.com/c/sentiment-analysis-on-movie-reviews).
+Additionally, this document is interactive and the code to produce it can be found on my github repository [here](https://github.com/greentheo/MovieReviewSentimentCompetition).
 
 ## Competition Summary
 
