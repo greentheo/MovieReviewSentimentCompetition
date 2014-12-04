@@ -164,7 +164,7 @@ inputPanel(
 values=reactiveValues()
 
 renderPlot({
-  qplot(x = as.numeric(values$predAnalysis$Sentiment), y=values$predAnalysis$accuracy,geom = "line")
+  qplot(x = as.numeric(values$predAnalysis$Sentiment), y=values$predAnalysis$accuracy,geom = "bar", stat="identity")
 })
 
 
