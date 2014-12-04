@@ -1,0 +1,235 @@
+---
+title: "Interactive Movie Sentiment Analysis"
+author: "Theodore Van Rooy"
+date: "December 4, 2014"
+output: html_document
+runtime: shiny
+---
+
+### More info on Theo:  [Royalty Analytics](http://royaltyanalytics.com)
+### LinkedIn Link: [Theodore Van Rooy](https://www.linkedin.com/in/theodorev)  
+--------------
+
+A full description of the competition can be found [here](https://www.kaggle.com/c/sentiment-analysis-on-movie-reviews) on the Kaggle website.  The following is my summary and take on solving this problem.  
+
+Additionally, this document is interactive and the code to produce it can be found on my github repository [here](https://www.kaggle.com/c/sentiment-analysis-on-movie-reviews).
+
+## Competition Summary
+
+The modern entertainment consuming citizen is faced with a key challenge:  
+
+*How do I find good content with so many options?*
+
+Sites like Rotten Tomatoes exist to help the modern consumer make those choices based on their feedback and the feedback of others.
+
+Given that Rotten Tomatoes has no access to viewing times and habits, like Netflix or a similar Content Provider would have access to, the next best source of data is written movie reviews and N-star ratings.
+
+Rotten Tomatoes would love to be able to turn a collection of movie reviews into a 5 star rating or a recommendation for a movie (terrible, bad, okay, good, excellent).  This competition is to accomplish just this task.  The data set provided is a corpus of movie reviews and the task at hand is to properly classify each movie review for a given movie as one of the following:
+
+*  negative
+*  somewhat negative
+*  neutral
+*  somewhat positive
+*  positive
+
+To accomplish this task, they've gone through and labelled approximately 200k movie reviews with humans using Amazon Turk.
+
+The competitor has access to 150k labelled movie reviews and must build a model to make labeling predictions on the "Test" set of ~50k unlabeled reviews.
+
+## What does winning look like? (Key Problems to solve)
+
+Winning in this case is simple, the highest classification accuracy wins.  
+
+Classification accuracy here is determined with a simplistic calculation:
+
+$$ \frac{class_{correct}}{num_{total}} $$
+
+### (Small Digression) A critique of the judgement criteria
+
+This performance metric is too simplistic and does not fully capture the power of a predictive model.  In this case a better metric might be a weighted classification distance.  
+
+For instance, a model which classifies a Negative Review as "Positive"" should be considered worse than a model which classifies a negative review as "somewhat negative".  
+
+In other words, sentiment is not  neatly divided into 5 separate and non-intersecting categories to be framed as a purely "categorical"  problem.  
+
+A better metric would be:
+
+$$ median(distance_{class-actual}) $$
+
+And of course you could bias the results of the model towards the class that you wanted to get right more often.  For instance, misclassifying "Negative" as "Positive" reviews is more expensive than classifying "Positives" as "Neutrals"... users simply hate wasted time and if they don't trust the system they wont use it after a few tries.  A simple weighting scheme would work well.
+
+## What does the data look like? (Key Data challenges)
+
+```{r, echo=FALSE}
+library(ggplot2)
+library(plyr)
+library(dplyr)
+
+data = read.delim('data/train.tsv')
+
+class=data.frame(Sentiment=0:4, Class=c("Negative", "SomewhatNegative","Neutral","SomewhatPositive","Positive"))
+class$Class = factor(class$Class, levels = c("Negative", "SomewhatNegative","Neutral","SomewhatPositive","Positive"))
+dataM = merge(data, class, by="Sentiment")
+
+ggplot(dataM, aes(x=Class))+geom_bar()+
+  labs(title="Counts of Examples by Class")+
+  theme(axis.text.x=element_text(angle=-45))
+
+#smaller sample from dataM for doing classification and prediction on much more quickly
+dataMSub = dataM[sample(1:nrow(dataM), 1000), ]
+
+#precompute word variance tables
+wordSentiment = ddply(dataMSub, .(PhraseId), function(x){
+  data.frame(word=unlist(strsplit(as.character(x$Phrase), split = " ")), Sentiment=x$Sentiment)
+})
+
+wordTable = wordSentiment %.%
+  group_by(word) %.%
+  summarize(meanSent=mean(Sentiment),
+            varSent=var(Sentiment),
+            freq=length(Sentiment)/nrow(wordSentiment))
+wordTable[is.na(wordTable)]=0
+
+```
+
+A key take away here is that about half of the examples are "neutral".  Furthermore, the distribution of examples rather looks like a nice normal distribution!
+
+This gives further credence to the thought that Sentiment is not categorically distributed, but rather somewhat continuously distributed with a slight bias towards positive sentiment.
+
+The following are a few examples from each class:
+
+```{r echo=FALSE}
+
+for(class in unique(dataM$Class)){
+  cat('Class: ', class, '\n')
+  print(as.character(sample(subset(dataM, Class="Negative")$Phrase, 2)))
+  cat('\n')
+}
+
+```
+
+The big challenge here is really that meaning and interpretation are inherently varied.  
+
+In other words, if a human reader might disagree on whether something is "Neutral" or "SomewhatPositive" a machine will have a very difficult time deciding on the sentiment.
+
+## Problem solving methodology
+
+There is a large body of work surrounding sentiment analysis and no one direct method applies.  However, from a machine learning standpoint the approach here is standard:
+
+1.  Divide into training and test sets to develop a model.
+2.  Apply a search method to find the best features for a particular learning method.
+3.  Apply the learning method to the features, gauge success, and refine the model (the features)
+
+Let's apply a simple learning model to a standard cross validation scheme.  Please adjust sliders below to see results:
+
+**Inputs:**  word-sentiment association
+**Feature Selection:** A word is not used if it's sentiment is too varied, otherwise it's average sentiment. 
+**Classification:**  a phrase is scored by the average sentiment of it's words, and piped through a random forest to predict class based on average sentiment.
+**Optimization:**  vary the threshold used to select whether words are used in the average sentiment score for a phrase.
+
+### Mean word sentiment
+
+Just for fun, this is what happens if you try to classify a word according to a sentiment.  This chart shows that many words have a clear sentiment... so they should be useul in our simple feature selection/creation.
+
+```{r echo=FALSE}
+
+ggplot(wordTable, aes(x=meanSent))+geom_histogram()+
+  labs(title="Distribution of Sentiment Across words in phrases",x="Mean Sentiment")
+
+```
+
+The following is an interactive classification demo: (note changing a slider means that it takes a while to recompute)
+
+```{r, echo=FALSE}
+library(shiny)
+library(caret)
+
+inputPanel(
+  selectInput("k", label="Number of Cross Validation Folds",choices = c(3:10), selected = 3),
+  sliderInput("maxVar", label = "Maximum Variance of Word Sentiment Allowed" ,
+              min = 0.2, max = 5, value = 1, step = 0.2)
+)
+
+values=reactiveValues()
+
+renderPlot({
+  qplot(x = as.numeric(values$predAnalysis$Sentiment), y=values$predAnalysis$accuracy,geom = "line")
+})
+
+
+renderDataTable({
+  #based on slider, set words to 0 based on filter
+  wordTableFilter = wordTable
+  wordTableFilter$meanSent[wordTableFilter$varSent>input$maxVar]=0
+  
+  withProgress(message = 'Calculation in progress',
+                   detail = 'Creating Analysis', value = 0, {
+                     incProgress(.5)
+  #score each phrase
+  dataMSubScored = ddply(dataMSub, .(PhraseId), function(x){
+    phrase=data.frame(word = unlist(strsplit(as.character(x$Phrase), " ")), Sentiment=x$Sentiment)
+    phraseM=merge(phrase, wordTableFilter, by="word")
+    data.frame(PhraseId=x$PhraseId[1], Score=mean(phraseM$meanSent), Sentiment=phraseM$Sentiment[1])
+  })
+  
+  # do some prediction and testing here with the CFV from caret
+  fitControl <- trainControl(
+                           method = "repeatedcv",
+                           number = input$k,
+                           ## repeated ten times
+                           repeats = input$k)
+  rpartFit1 <- train(factor(Sentiment) ~ Score, data = dataMSubScored,
+                 method = "lda",
+                 trControl = fitControl,
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+
+  dataMSubPred=data.frame(dataMSubScored, predicted=predict(rpartFit1, dataMSubScored))
+  
+  #analysis by class
+  dataMSubPredAnalysis = dataMSubPred %.%
+    group_by(Sentiment) %.%
+    summarize(meanScore=mean(Score),
+              meanPrediction=mean(as.numeric(predicted)),
+              accuracy=length(which(predicted==Sentiment))/length(Sentiment),
+              distance=mean(as.numeric(Sentiment)-as.numeric(predicted)))
+  values$predAnalysis = dataMSubPredAnalysis
+  finalData = rbind(dataMSubPredAnalysis, colMeans(dataMSubPredAnalysis))
+  finalData$Sentiment[6]="Average"
+  })
+  return(finalData)
+  
+})
+```
+
+## Summary
+
+### Getting better
+
+Obviously a toy prediction example leaves much to be desired, but in general the following method leads to better and better prediction accuracy:
+
+*  Refine and select better features
+*  Refine and select better prediction techniques
+
+How one refines the feature set and the prediction techniques is, simply put, the art of Data Science.  
+
+### Overfitting
+
+While we've used k-fold cross validation to avoid over fitting here, the more we work on this model the more we will tend to over fit it.  Just a word of caution.
+
+### Limits of Optimization and Recommendations
+
+A question not addressed in the competition here which is utterly crucial to the data science effort is:
+
+*How will the end user consume the results of the predictive model?*
+
+As noted previously, if humans have a hard time classifying sentiment, then machines will do terribly at it.  Presenting recommendations to individual users based on sentiment is probably a Sisyphean task.
+
+My recommendation would be to give up this pursuit and instead focus on a much more achievable task:
+
+**Group users into similar behavioral-demographic segments, and then present recommendations based on what the group would likely enjoy**
+
+
+
+
